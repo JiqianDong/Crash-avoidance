@@ -122,7 +122,6 @@ class World(object):
         self.CAV = self.world.try_spawn_actor(get_blueprint("CAV","model3","204,0,0"), CAV_spawn_point)
         self.LHDV = self.world.try_spawn_actor(get_blueprint("LHDV","tt","255,255,0"), LHDV_spawn_point)
         self.FHDV = self.world.try_spawn_actor(get_blueprint("FHDV",'bmw','128,128,128'), FHDV_spawn_point)
-        #self.BHDV = self.world.try_spawn_actor(get_blueprint("BHDV",'mustang','128,128,128'), BHDV_spawn_point) #not connected
         self.BHDV = self.world.try_spawn_actor(get_blueprint("BHDV",'mustang','51,51,255'), BHDV_spawn_point)
 
         # self.vehicles = [self.CAV, self.LHDV, self.FHDV]

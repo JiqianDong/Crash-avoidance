@@ -80,8 +80,8 @@ class CarlaEnv(object):
                 cav_loc = 0
                 print("unknow spawn point") 
             self.init_params = dict(cav_loc = 1,
-                                    speed = 40,
-                                    bhdv_init_speed = 30,
+                                    speed = 20,
+                                    bhdv_init_speed = 10,
                                     headway = 10,
                                     loc_diff = 4.5, # almost crash 
                                     headway_2 = 7)
@@ -105,7 +105,6 @@ class CarlaEnv(object):
             pygame.HWSURFACE | pygame.DOUBLEBUF)
 
         self.world.destroy()
-        
         self.world.restart()
         self.current_state = defaultdict(list)  #reinitialize the current states
         
@@ -133,7 +132,6 @@ class CarlaEnv(object):
         self.world.cav_controller.step(rl_actions)
         self.world.ldhv_controller.step()
         # self.world.bhdv_controller.step()
-
         self.carla_update()
         # self.carla_update()
 
@@ -152,8 +150,6 @@ class CarlaEnv(object):
         reward_ = self.compute_reward(collision)
 
         self.timestep += 1 
-        
-
         if self.render_pygame:
             self.render_frame()
 
@@ -210,7 +206,6 @@ class CarlaEnv(object):
         return self.current_state
 
     def compute_reward(self,collision=None):
-
         weight_collision = 1
         base_reward = 0
         collision_penalty = 0
@@ -220,6 +215,4 @@ class CarlaEnv(object):
         return base_reward - collision_penalty*weight_collision
 
 
-    def compute_cost(self,state):
-        pass
 
