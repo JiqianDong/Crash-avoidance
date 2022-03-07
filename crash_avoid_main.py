@@ -21,6 +21,7 @@ def main():
     WINDOW_SIZE = 5
     RETURN_SEQUENCE = False
     RENDER = True
+    CITY_NAME = "Town03"
 
     ### FLOW CONTROL FLAGS
     GATHER_DATA = False
@@ -28,24 +29,28 @@ def main():
     TESTING = True
     RETRAINING = False
 
+
+    
     if GATHER_DATA:
-        
-        gather_data_main(num_runs=50,
+        data_path = './experience_data/{}_data_pickle.pickle'.format(CITY_NAME)
+        gather_data_main(city_name=CITY_NAME,
+                         num_runs=50,
                          warming_up_steps=WARMING_UP_STEPS,
                          window_size=WINDOW_SIZE,
                          render=RENDER,
                          max_steps_per_episode=MAX_STEPS_PER_EPISODE,
-                         save_info=True)
+                         data_saving_path=data_path)
 
     if TRAINING:
-        
+        data_path = './experience_data/{}_data_pickle.pickle'.format(CITY_NAME)
         models = ['mlp','rnn','linreg']
         # models = ['linreg']
         # models = ['rnn']
-        for model_type in models:
-            training_main(model_type,
+        for md in models:
+            training_main(model_type = md,
                           num_training_epochs=1000,
                           batch_size=40,
+                          data_loading_path = data_path,
                           return_sequence=RETURN_SEQUENCE,
                           loading_pretrained=False)
 

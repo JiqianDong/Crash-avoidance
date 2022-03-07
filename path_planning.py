@@ -11,7 +11,7 @@ try:
 except IndexError:
     pass
 from carla_env import CarlaEnv
-
+import carla
 from sklearn.metrics import pairwise_distances
 import pickle
 from dataset import Dataset
@@ -100,8 +100,25 @@ def TTC_to_road(cav_output):
 
     return ttc_left + ttc_right
 
+def deviation_from_center(cav_output, hdmap):
+    '''
+    Compute the deviation from the lane center
+    cav_output: [num_traj, 6]
+    '''
+    distances = []
+    for point in np.array(cav_output[:,:2]):
+        loc = carla.Location(x = float(point[0]), y = float(point[1]), z=0.133)
+        center_loc = hdmap.get_waypoint(loc, project_to_road=True)
+        # print(loc)
+        # print(center_loc)
+        dist = loc.distance(center_loc.transform.location)
+        distances.append(dist)
+    return np.array(distances)
 
-def compute_cost(cav_state, hdv_state):
+
+
+
+def compute_cost(cav_state, hdv_state, hdmap):
 
     ##### Distance cost
     # cav_state = cav_state.numpy()
@@ -117,9 +134,7 @@ def compute_cost(cav_state, hdv_state):
     ###### TTC cost 
     ttc = TTC_batch_computing(cav_state, hdv_state, 2).numpy() # [num_traj, num_hdv]
     ttc[ttc>5] = float('inf')
-
     ttc_cost = (1/ttc).sum(axis=1)
-    
     
     ### ttc to road edge
     ttc_to_road = TTC_to_road(cav_state)
@@ -134,13 +149,17 @@ def compute_cost(cav_state, hdv_state):
     # print('ttc_to_road: ',ttc_to_road_cost)
 
     # cost = ttc_cost 
-    cost = ttc_cost + 0.3*ttc_to_road_cost #*0.5#+distance_cost
-    # print(cost)
+    dfc = deviation_from_center(cav_state, hdmap)
 
+    cost = ttc_cost + 0.0 * dfc #+ 0.3*ttc_to_road_cost #*0.5#+distance_cost
+    print("ttc cost",ttc_cost)
+    
+    print("dfc cost", dfc)
+    print()
     return cost
 
 
-def MPC_select_action(cav_predictor,hdv_predictor,current_state,planning_horizon,num_trajectories=5):
+def MPC_select_action(cav_predictor,hdv_predictor,current_state,hdmap, planning_horizon,num_trajectories=5):
 
     random_actions = np.random.choice(3,size=[planning_horizon,num_trajectories,2]) # size=[planning_horizon,num_trajectories,2]
     # Give heuristic for braking:
@@ -173,11 +192,8 @@ def MPC_select_action(cav_predictor,hdv_predictor,current_state,planning_horizon
         hdv_output = hdv_predictor.forward(hdv_X).detach() # [num_hdvs, feature_size=6]
         
         # compute cost for each trajectory
-        costs += gamma**(i+1)*compute_cost(cav_output.clone(), hdv_output.clone())
-
+        costs += gamma**(i+1)*compute_cost(cav_output.clone(), hdv_output.clone(), hdmap)
         hdv_X_new = torch.stack([torch.cat([val[1:,:],new_val.unsqueeze(0)],dim=0) for val,new_val in zip(hdv_X,hdv_output)]).float()
-        
-        
         cav_new_state = torch.cat([cav_output,current_controls],dim=1).unsqueeze(1)
         cav_X_new = torch.cat([cav_X[:,1:,:],cav_new_state],dim=1)
 
@@ -227,7 +243,8 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
                 if event.type == pygame.QUIT:
                     quit_flag = True
 
-            rl_actions = MPC_select_action(cav_predictor,hdv_predictor,current_state,planning_horizon,num_trajectories)            
+            rl_actions = MPC_select_action(cav_predictor,\
+                    hdv_predictor,current_state,env.world.map,planning_horizon,num_trajectories)            
             
             next_state, reward, done, info = env.step(rl_actions) #state: {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
     
@@ -254,26 +271,22 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
 
 def path_planning_main(num_runs,max_steps_per_episode, model_type, \
     return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories, \
-    render=True, saving_data=True,init_params=None):
+    city_name="Town03", render=True, saving_data=True,init_params=None):
 
     ### load the model
     from traj_pred_models import build_model
     seq_flag = 'seq' if return_sequence else 'nonseq'
-    cav_model_file = './models/{}_{}_{}.pt'.format('cav', model_type, seq_flag)
-    hdv_model_file = './models/{}_{}_{}.pt'.format('hdv', model_type, seq_flag)
-
+    cav_model_file = './models/{}/{}_{}_{}.pt'.format(city_name, 'cav', model_type, seq_flag)
+    hdv_model_file = './models/{}/{}_{}_{}.pt'.format(city_name, 'hdv', model_type, seq_flag)
 
     cav_predictor, hdv_predictor, _, _ = build_model(model_type, return_sequence)
-
     # print(cav_model_file,hdv_model_file)
-
     try:
         cav_predictor.load_state_dict(torch.load(cav_model_file))
         hdv_predictor.load_state_dict(torch.load(hdv_model_file))
 
         # print(cav_predictor.output_layer.weight)
         # print(hdv_predictor.output_layer.weight)
-
         cav_predictor.eval()
         hdv_predictor.eval()
 
@@ -281,7 +294,7 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
     except Exception as e:
         print(e)
         print("no trained model found")
-        return
+        return 
 
     ### set up the environment
     env = None
@@ -290,7 +303,8 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
         pygame.font.init()
 
         # create environment
-        env = CarlaEnv( render_pygame=render,
+        env = CarlaEnv( city_name=city_name,
+                        render_pygame=render,
                         warming_up_steps=warming_up_steps, 
                         window_size=window_size,
                         init_params = init_params)
@@ -331,12 +345,13 @@ if __name__ == "__main__":
     MAX_STEPS_PER_EPISODE = 100
     WARMING_UP_STEPS = 50
     WINDOW_SIZE = 5
-    # PLANNING_HORIZONs = [1,3,5]
-    # NUM_TRAJECORIESs = [5,10,20]
-    PLANNING_HORIZONs = [1,3,5,7,10]
-    NUM_TRAJECORIESs = [5,10,20,30]
+    PLANNING_HORIZONs = [5]
+    NUM_TRAJECORIESs = [10,20]
+    # PLANNING_HORIZONs = [1,3,5,7,10]
+    # NUM_TRAJECORIESs = [5,10,20,30]
     SAVING_DATA = False
-    speed = 15
+    CITY_NAME = "Town03"
+    speed = 20
     init_params = dict(cav_loc = 1,
                        speed = speed,
                        bhdv_init_speed = speed,
@@ -356,6 +371,7 @@ if __name__ == "__main__":
                                     window_size=WINDOW_SIZE, 
                                     planning_horizon=PLANNING_HORIZON, 
                                     num_trajectories = NUM_TRAJECORIES,
+                                    city_name=CITY_NAME,
                                     render=RENDER,
                                     saving_data=SAVING_DATA,
                                     init_params=init_params)

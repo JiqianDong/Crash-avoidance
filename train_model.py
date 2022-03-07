@@ -64,17 +64,19 @@ def train_one_epoch(cav_model, hdv_model, cav_optimizer, hdv_optimizer, dataset,
     return cav_training_loss, hdv_training_loss 
 
 
-def training_main(model_type,num_training_epochs,batch_size,return_sequence=False,loading_pretrained=False):
+def training_main(model_type,num_training_epochs,batch_size,\
+        city_name, data_loading_path,return_sequence=False,\
+        loading_pretrained=False):
 
     #model files
     seq_flag = 'seq' if return_sequence else 'nonseq'
-    cav_model_file = './models/{}_{}_{}.pt'.format('cav', model_type, seq_flag)
-    hdv_model_file = './models/{}_{}_{}.pt'.format('hdv', model_type, seq_flag)
+    cav_model_file = './models/{}/_{}_{}_{}.pt'.format(city_name, 'cav', model_type, seq_flag)
+    hdv_model_file = './models/{}/_{}_{}_{}.pt'.format(city_name, 'hdv', model_type, seq_flag)
     
     from traj_pred_models import build_model
     
     # load the saved dataset
-    with open('./experience_data/data_pickle.pickle','rb') as f:
+    with open(data_loading_path,'rb') as f:
         init_dataset = pickle.load(f) 
 
     if loading_pretrained:
@@ -90,9 +92,8 @@ def training_main(model_type,num_training_epochs,batch_size,return_sequence=Fals
             print(e)
             pass
     
-
-    cav_predictor, hdv_predictor, cav_optimizer, hdv_optimizer = build_model(model_type,return_sequence)
-
+    cav_predictor, hdv_predictor, cav_optimizer, hdv_optimizer = \
+        build_model(model_type,return_sequence)
 
     cav_losses = []
     hdv_losses = []
@@ -116,8 +117,8 @@ def training_main(model_type,num_training_epochs,batch_size,return_sequence=Fals
     torch.save(hdv_predictor.state_dict(),hdv_model_file)
 
     # save the training loss history
-    cav_logdir = './training_stats/cav/'
-    hdv_logdir = './training_stats/hdv/'
+    cav_logdir = './training_stats/{}/cav/'.format(city_name)
+    hdv_logdir = './training_stats/{}/hdv/'.format(city_name)
 
     with open(cav_logdir + model_type +'_training_loss.txt','w') as f:
         json.dump({"training_loss":cav_losses}, f)
@@ -135,8 +136,10 @@ if __name__ == "__main__":
     models = ['mlp','rnn','linreg']
     # models = ['linreg']
     # models = ['rnn']
-
-
-    for model_type in models:
-        training_main(model_type, 10)
+    city_name = "Town03"
+    data_path = './experience_data/{}_data_pickle.pickle'.format(city_name)
     
+    for model_type in models:
+   
+        training_main(model_type,10,batch_size=40,city_name=city_name, \
+            data_loading_path=data_path,return_sequence=False,loading_pretrained=False)

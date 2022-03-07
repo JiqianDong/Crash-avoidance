@@ -5,7 +5,7 @@ from dataset import Dataset
 import numpy as np
 import time
 
-def gather_data(env, num_runs, max_steps_per_episode, save_info):
+def gather_data(env, num_runs, max_steps_per_episode, data_saving_path=None):
 
     dataset = Dataset()
     clock = pygame.time.Clock()
@@ -45,20 +45,22 @@ def gather_data(env, num_runs, max_steps_per_episode, save_info):
 
         print("Episode ",episode_num," done in : ", timestep, " -- episode reward: ", episode_reward)
 
-    if save_info:
-        with open('./experience_data/data_pickle.pickle','wb') as f:
+    if data_saving_path:
+        with open(data_saving_path,'wb') as f:
             pickle.dump(dataset,f,pickle.HIGHEST_PROTOCOL)
 
 
-def gather_data_main(num_runs,warming_up_steps, window_size,render, max_steps_per_episode, save_info):
+def gather_data_main(city_name, num_runs,warming_up_steps, \
+        window_size,render, max_steps_per_episode, data_saving_path):
     env = None
     try:
         pygame.init()
         pygame.font.init()
 
         # create environment
-        env = CarlaEnv(render_pygame=render,warming_up_steps=warming_up_steps, window_size=window_size)
-        gather_data(env, num_runs, max_steps_per_episode, save_info)
+        env = CarlaEnv(city_name=city_name, render_pygame=render,\
+            warming_up_steps=warming_up_steps, window_size=window_size)
+        gather_data(env, num_runs, max_steps_per_episode, data_saving_path)
 
     except Exception as e:
         print (e)

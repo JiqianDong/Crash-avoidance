@@ -56,12 +56,11 @@ class CarlaEnv(object):
         self.client.set_timeout(2.0)
 
         self.hud = HUD(1700,1000)
-        self._carla_world = self.client.get_world()
+        self._carla_world = self.client.load_world(city_name)
         
         settings = self._carla_world.get_settings()
         settings.synchronous_mode = True
         settings.fixed_delta_seconds = 0.05
-
 
         self._carla_world.apply_settings(settings)
 
@@ -75,6 +74,11 @@ class CarlaEnv(object):
         self.current_state = defaultdict(list)  #  {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
 
         if not init_params:
+            if city_name == "Town03": cav_loc = 1
+            elif city_name == "Town04":cav_loc = 0
+            else:
+                cav_loc = 0
+                print("unknow spawn point") 
             self.init_params = dict(cav_loc = 1,
                                     speed = 40,
                                     bhdv_init_speed = 30,
@@ -170,7 +174,9 @@ class CarlaEnv(object):
             return None
 
     def get_state(self):
-        
+        '''
+        N * [x,y,vx,vy,ax,ay]
+        '''
         for veh in self.world.vehicles:
             state = []
             veh_name = veh.attributes['role_name']

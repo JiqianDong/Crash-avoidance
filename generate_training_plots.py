@@ -75,7 +75,6 @@ def plot_training(logdir,loss_smooth_weight=0.3,reward_smooth_weight=0.85,loss_y
     plt.savefig('./figures/rewards.png',dpi=300)
 
 
-
 def loss_plot(logdir,veh_type):
 
     import glob
