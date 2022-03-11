@@ -65,7 +65,6 @@ class CarlaEnv(object):
         self._carla_world.apply_settings(settings)
 
         self.world = World(self._carla_world, self.hud, init_params)
-        # time.sleep(2)
         self.render_pygame = render_pygame
 
         self.timestep = 0
@@ -79,6 +78,7 @@ class CarlaEnv(object):
             else:
                 cav_loc = 0
                 print("unknow spawn point") 
+            print("using default initial parameters")
             self.init_params = dict(cav_loc = 1,
                                     speed = 20,
                                     bhdv_init_speed = 10,
@@ -105,7 +105,7 @@ class CarlaEnv(object):
             pygame.HWSURFACE | pygame.DOUBLEBUF)
 
         self.world.destroy()
-        self.world.restart()
+        self.world.restart(self.init_params)
         self.current_state = defaultdict(list)  #reinitialize the current states
         
         self.timestep = 0
@@ -125,7 +125,6 @@ class CarlaEnv(object):
             if frame != self.frame_num + 1:
                 print('frame skip!')
         self.frame_num = frame
-
 
     def step(self,rl_actions):
         

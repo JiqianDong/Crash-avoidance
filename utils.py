@@ -41,11 +41,10 @@ def get_actor_display_name(actor, truncate=250):
 
 
 class World(object):
-    def __init__(self, carla_world, hud, init_params):
+    def __init__(self, carla_world, hud):
         self.world = carla_world
         self.hud = hud
         self.map = self.world.get_map()
-        self.init_params = init_params
 
         self.CAV = None
         self.LHDV = None
@@ -68,11 +67,11 @@ class World(object):
         self.restart()  
         self.world.on_tick(hud.on_world_tick)
 
-    def restart(self):
+    def restart(self, init_params):
         # Set up vehicles
         self.LHDV_FLAGS = random.choice([0,1]) # 0 crash from left, 1 crash from right
 
-        self.setup_vehicles(**self.init_params)
+        self.setup_vehicles(**init_params)
 
         # Set up the sensors.
         self.setup_sensors()
@@ -83,18 +82,14 @@ class World(object):
                        speed,
                        bhdv_init_speed,
                        headway,
-                       loc_diff, # almost crash 
+                       loc_diff, 
                        headway_2):
         
-        # loc_diff = 3.5 # crasing
-        
 
-        # loc_diff = 6 # almost crash 
         lane_width = 3.5
 
-
         LHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
-        LHDV_spawn_point.location.y += (self.LHDV_FLAGS*2 - 1 )*lane_width 
+        LHDV_spawn_point.location.y += (self.LHDV_FLAGS*2 - 1)*lane_width 
         # print("base:",self.world.get_map().get_spawn_points()[cav_loc])
 
         # print("LHDV",LHDV_spawn_point.location, "flag", self.LHDV_FLAGS)
@@ -104,13 +99,12 @@ class World(object):
 
         FHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
         FHDV_spawn_point.location.x += headway_2
-        FHDV_spawn_point.location.y += (self.LHDV_FLAGS*2 - 1 )*lane_width 
+        FHDV_spawn_point.location.y += (self.LHDV_FLAGS*2 - 1)*lane_width 
         # print("FHDV",FHDV_spawn_point.location)
 
         BHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
         BHDV_spawn_point.location.x -= headway
-        # BHDV_spawn_point.location.z -= 1
-        # print("BHDV",BHDV_spawn_point.location)
+
 
         def get_blueprint(role_name,filters,color):
             blueprint = self.world.get_blueprint_library().filter(filters)[0]
@@ -124,7 +118,6 @@ class World(object):
         self.FHDV = self.world.try_spawn_actor(get_blueprint("FHDV",'bmw','128,128,128'), FHDV_spawn_point)
         self.BHDV = self.world.try_spawn_actor(get_blueprint("BHDV",'mustang','51,51,255'), BHDV_spawn_point)
 
-        # self.vehicles = [self.CAV, self.LHDV, self.FHDV]
         self.vehicles = [self.CAV, self.LHDV, self.FHDV, self.BHDV]
 
         for i in self.vehicles:
@@ -153,7 +146,6 @@ class World(object):
         # self.cav_controller = controller(self.CAV, True)
         self.cav_controller = CAV_controller(self.CAV)
         self.ldhv_controller = LHDV_controller(self.LHDV,False,self.LHDV_control_files[self.LHDV_FLAGS])
-
         # self.bhdv_controller = controller(self.BHDV, True)
         
 
