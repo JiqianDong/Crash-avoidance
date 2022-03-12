@@ -43,7 +43,6 @@ class CarlaEnv(object):
     '''
         An OpenAI Gym Environment for CARLA.
     '''
-
     def __init__(self,
                  host='127.0.0.1',
                  port=2000,
@@ -51,27 +50,10 @@ class CarlaEnv(object):
                  render_pygame=True,
                  warming_up_steps=50,
                  window_size = 5,
-                 init_params = None):
-        self.client = carla.Client(host,port)
-        self.client.set_timeout(2.0)
-
-        self.hud = HUD(1700,1000)
-        self._carla_world = self.client.load_world(city_name)
-        
-        settings = self._carla_world.get_settings()
-        settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 0.05
-
-        self._carla_world.apply_settings(settings)
-
-        self.world = World(self._carla_world, self.hud, init_params)
-        self.render_pygame = render_pygame
-
-        self.timestep = 0
-        self.warming_up_steps = warming_up_steps
-        self.window_size = window_size
-        self.current_state = defaultdict(list)  #  {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
-
+                 init_params = None,
+                 use_real_human = False
+                 ):
+        self.init_params = init_params
         if not init_params:
             if city_name == "Town03": cav_loc = 1
             elif city_name == "Town04":cav_loc = 0
@@ -85,6 +67,28 @@ class CarlaEnv(object):
                                     headway = 10,
                                     loc_diff = 4.5, # almost crash 
                                     headway_2 = 7)
+
+        self.client = carla.Client(host,port)
+        self.client.set_timeout(2.0)
+
+        self.hud = HUD(1700,1000)
+        self._carla_world = self.client.load_world(city_name)
+        
+        settings = self._carla_world.get_settings()
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 0.05
+
+        self._carla_world.apply_settings(settings)
+
+        self.world = World(self._carla_world, self.hud, self.init_params, use_real_human)
+        self.render_pygame = render_pygame
+
+        self.timestep = 0
+        self.warming_up_steps = warming_up_steps
+        self.window_size = window_size
+        self.current_state = defaultdict(list)  #  {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
+
+
     @staticmethod
     def action_space(self):
         throttle_brake = Discrete(3)  # -1 brake, 0 keep, 1 throttle
@@ -99,7 +103,6 @@ class CarlaEnv(object):
 
     def reset(self):
         # reset the render display panel
-
         if self.render_pygame:
             self.display = pygame.display.set_mode((1280,760),
             pygame.HWSURFACE | pygame.DOUBLEBUF)
@@ -130,9 +133,7 @@ class CarlaEnv(object):
         
         self.world.cav_controller.step(rl_actions)
         self.world.ldhv_controller.step()
-        # self.world.bhdv_controller.step()
         self.carla_update()
-        # self.carla_update()
 
         state_ = copy.deepcopy(self.get_state()) #next observation
 

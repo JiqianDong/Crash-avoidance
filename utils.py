@@ -41,7 +41,7 @@ def get_actor_display_name(actor, truncate=250):
 
 
 class World(object):
-    def __init__(self, carla_world, hud):
+    def __init__(self, carla_world, hud, init_params, use_real_human=False):
         self.world = carla_world
         self.hud = hud
         self.map = self.world.get_map()
@@ -50,9 +50,7 @@ class World(object):
         self.LHDV = None
         self.FHDV = None
         self.BHDV = None
-
-        self.LHDV_FLAGS = None   # control LHDV is at left 0 or right 1  
-        self.LHDV_control_files = ['./control_details/LHDV.p','./control_details/LHDV_right.p']    
+        self.use_real_human = use_real_human
 
         self.vehicles = None
 
@@ -64,18 +62,31 @@ class World(object):
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
 
-        self.restart()  
+        self.restart(init_params)  
         self.world.on_tick(hud.on_world_tick)
 
     def restart(self, init_params):
         # Set up vehicles
         self.LHDV_FLAGS = random.choice([0,1]) # 0 crash from left, 1 crash from right
 
+        if self.use_real_human:
+            if self.LHDV_FLAGS == 0: # left
+                file_number = random.randint(0, 28)
+                path_template = './human_data/left/{}.p'
+            else:
+                file_number = random.randint(0, 26)
+                path_template = './human_data/right/{}.p'
+            control_command_file = path_template.format(file_number)
+        else:
+            files = ['./control_details/LHDV.p','./control_details/LHDV_right.p'] 
+            control_command_file = files[self.LHDV_FLAGS]
+
         self.setup_vehicles(**init_params)
 
         # Set up the sensors.
         self.setup_sensors()
-        self.setup_controllers()
+        
+        self.setup_controllers(control_command_file)
 
     def setup_vehicles(self, 
                        cav_loc,
@@ -85,7 +96,6 @@ class World(object):
                        loc_diff, 
                        headway_2):
         
-
         lane_width = 3.5
 
         LHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
@@ -142,10 +152,10 @@ class World(object):
         self.hud.notification(actor_type)
 
 
-    def setup_controllers(self):
+    def setup_controllers(self, control_command_file):
         # self.cav_controller = controller(self.CAV, True)
         self.cav_controller = CAV_controller(self.CAV)
-        self.ldhv_controller = LHDV_controller(self.LHDV,False,self.LHDV_control_files[self.LHDV_FLAGS])
+        self.ldhv_controller = LHDV_controller(self.LHDV,False,control_command_file)
         # self.bhdv_controller = controller(self.BHDV, True)
         
 
@@ -423,7 +433,6 @@ class CollisionSensor(object):
         self.history.append((event.frame, intensity, actor_type))
         if len(self.history) > 4000:
             self.history.pop(0)
-
 
 # ==============================================================================
 # -- LaneInvasionSensor --------------------------------------------------------

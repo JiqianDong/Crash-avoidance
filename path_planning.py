@@ -152,10 +152,10 @@ def compute_cost(cav_state, hdv_state, hdmap):
     dfc = deviation_from_center(cav_state, hdmap)
 
     cost = ttc_cost + 0.0 * dfc #+ 0.3*ttc_to_road_cost #*0.5#+distance_cost
-    print("ttc cost",ttc_cost)
+    # print("ttc cost",ttc_cost)
     
-    print("dfc cost", dfc)
-    print()
+    # print("dfc cost", dfc)
+    # print()
     return cost
 
 
@@ -271,7 +271,7 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
 
 def path_planning_main(num_runs,max_steps_per_episode, model_type, \
     return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories, \
-    city_name="Town03", render=True, saving_data=True,init_params=None):
+    city_name="Town03", render=True, saving_data=True,init_params=None, use_real_human=False):
 
     ### load the model
     from traj_pred_models import build_model
@@ -307,7 +307,8 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
                         render_pygame=render,
                         warming_up_steps=warming_up_steps, 
                         window_size=window_size,
-                        init_params = init_params)
+                        init_params = init_params,
+                        use_real_human=use_real_human)
         
         dataset,success_runs = avoid_crash( env=env,
                                             num_runs=num_runs,
@@ -340,18 +341,21 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
 
 if __name__ == "__main__":
 # 
-    RENDER = True
-    # RENDER = False
+    # RENDER = True
+    RENDER = False
     MAX_STEPS_PER_EPISODE = 100
     WARMING_UP_STEPS = 50
     WINDOW_SIZE = 5
-    PLANNING_HORIZONs = [5]
-    NUM_TRAJECORIESs = [10,20]
-    # PLANNING_HORIZONs = [1,3,5,7,10]
-    # NUM_TRAJECORIESs = [5,10,20,30]
+
+    # PLANNING_HORIZONs = [3]
+    # NUM_TRAJECORIESs = [30]
+
+    PLANNING_HORIZONs = [1,3,5,7,10]
+    NUM_TRAJECORIESs = [5,10,20,30]
     SAVING_DATA = False
+    USE_REAL_HUMAN = True
     CITY_NAME = "Town03"
-    speed = 20
+    speed = 25
     init_params = dict(cav_loc = 1,
                        speed = speed,
                        bhdv_init_speed = speed,
@@ -374,7 +378,8 @@ if __name__ == "__main__":
                                     city_name=CITY_NAME,
                                     render=RENDER,
                                     saving_data=SAVING_DATA,
-                                    init_params=init_params)
+                                    init_params=init_params,
+                                    use_real_human=USE_REAL_HUMAN)
     
             print("PLANNING_HORIZON: ", PLANNING_HORIZON)
             print("NUM_TRAJECORIES: ", NUM_TRAJECORIES)
@@ -382,6 +387,6 @@ if __name__ == "__main__":
 
             # info[]info.get()
 
-            with open("result15.txt",'a+') as f:
+            with open("result25_human.txt",'a+') as f:
                 s =  str(PLANNING_HORIZON) + " " + str(NUM_TRAJECORIES) + " " + str(sr)
                 f.write(s + '\n')
