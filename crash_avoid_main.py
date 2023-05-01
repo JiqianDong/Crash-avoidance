@@ -16,7 +16,7 @@ from train_model import training_main
 
 def main():
     ### GLOBAL PARAMETERS  
-    MAX_STEPS_PER_EPISODE = 300
+    MAX_STEPS_PER_EPISODE = 100
     WARMING_UP_STEPS = 50
     WINDOW_SIZE = 5
     RETURN_SEQUENCE = False
@@ -63,6 +63,8 @@ def main():
                             warming_up_steps=WARMING_UP_STEPS, 
                             window_size=WINDOW_SIZE, 
                             planning_horizon=15, 
+                            num_trajectories=10,
+                            CEM_iters=5,
                             render=True,
                             saving_data=saving_data)
 

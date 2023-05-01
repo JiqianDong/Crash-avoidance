@@ -66,7 +66,7 @@ def main(num_runs):
                 for veh_id, state_vals in state.items():
 
                     if veh_id == 'CAV':
-                        CAV_info = [veh_id,episode,timestep] +state_vals+ list(cav_control.values())
+                        CAV_info = [veh_id,episode,timestep] + state_vals+ list(cav_control.values())
 
                         CAV_infos.append(CAV_info)
                     else:
@@ -87,7 +87,11 @@ def main(num_runs):
             # time.sleep(0.01)
     finally:
         if SAVE_INFO:
-            cav_info = pd.DataFrame(CAV_infos,columns=['veh_id','episode','episode_step','px','py','sx','sy','ax','ay','throttle','steer','brake'])
+            print(cav_info)
+            cav_info = pd.DataFrame(CAV_infos,columns=['veh_id','episode','episode_step',
+                                                       'px','py','sx','sy','ax','ay',
+                                                       'throttle','steer','brake'])
+            
             cav_info.to_csv('./experience_data/cav_info.csv',index=False)
 
             hdv_info = pd.DataFrame(HDV_infos,columns=['veh_id','episode','episode_step','px','py','sx','sy','ax','ay'])
@@ -102,7 +106,6 @@ def main(num_runs):
             settings.synchronous_mode = False
             env._carla_world.apply_settings(settings)
         
-
         pygame.quit()
 
 if __name__ == '__main__':

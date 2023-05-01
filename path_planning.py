@@ -15,7 +15,7 @@ import carla
 from sklearn.metrics import pairwise_distances
 import pickle
 from dataset import Dataset
-
+import time
 
 
 
@@ -153,20 +153,15 @@ def compute_cost(cav_state, hdv_state, hdmap):
 
     cost = ttc_cost + 0.0 * dfc #+ 0.3*ttc_to_road_cost #*0.5#+distance_cost
     # print("ttc cost",ttc_cost)
-    
     # print("dfc cost", dfc)
     # print()
     return cost
 
-
-def MPC_select_action(cav_predictor,hdv_predictor,current_state,hdmap, planning_horizon,num_trajectories=5):
-
-    random_actions = np.random.choice(3,size=[planning_horizon,num_trajectories,2]) # size=[planning_horizon,num_trajectories,2]
-    # Give heuristic for braking:
-    # random_actions[:,:,0] = 0
-    # random_actions[:,:,1] = 1
-    current_control = current_state['current_control'][-1]  #[throttle, steering, brake]
-
+def compute_trajectory_costs(random_action_trajectories, 
+                             current_state, cav_predictor, hdv_predictor,
+                             hdmap):
+    
+    planning_horizon, num_trajectories, _ = random_action_trajectories.shape
     cav_state = torch.tensor(current_state['CAV']).float()
     cav_control = torch.tensor(current_state['current_control']).float()
     cav_X = torch.cat([cav_state,cav_control],dim=-1) 
@@ -177,38 +172,91 @@ def MPC_select_action(cav_predictor,hdv_predictor,current_state,hdmap, planning_
     costs = np.zeros(num_trajectories)
 
     # cost for summation of steering angle
-    steering_costs = np.zeros([num_trajectories,planning_horizon])
-
+    steering_costs = np.zeros([num_trajectories, planning_horizon])
     gamma = 0.99
     for i in range(planning_horizon):
 
         current_controls = cav_X[:,-1,-3:] #num_traj,3
  
-        current_controls = torch.tensor([process_action(a,c) for a,c in zip(random_actions[i],current_controls)]).float() # [num_trj, 3]
+        current_controls = torch.tensor([process_action(a,c) for a,c in zip(random_action_trajectories[i],current_controls)]).float() # [num_trj, 3]
         
-        steering_costs[:,i] = current_controls[:,1] # [num_trj, 1]
-
+        steering_costs[:,i] = np.abs(current_controls[:,1]) # [num_trj, 1] penalize the large steering angles
+        # print("steering_min_cost: ", np.min(steering_costs))
         cav_output = cav_predictor.forward(cav_X).detach() # [num_trj, feature_size=6] 
         hdv_output = hdv_predictor.forward(hdv_X).detach() # [num_hdvs, feature_size=6]
         
         # compute cost for each trajectory
-        costs += gamma**(i+1)*compute_cost(cav_output.clone(), hdv_output.clone(), hdmap)
+        costs += gamma**(i+1) * compute_cost(cav_output.clone(), hdv_output.clone(), hdmap)
         hdv_X_new = torch.stack([torch.cat([val[1:,:],new_val.unsqueeze(0)],dim=0) for val,new_val in zip(hdv_X,hdv_output)]).float()
         cav_new_state = torch.cat([cav_output,current_controls],dim=1).unsqueeze(1)
         cav_X_new = torch.cat([cav_X[:,1:,:],cav_new_state],dim=1)
 
         cav_X = cav_X_new
         hdv_X = hdv_X_new
+    # print(costs, 0.5*steering_costs.sum(axis=1))
+    return costs + 0.3 * steering_costs.sum(axis=1)
+    
 
-    # steering_costs = np.abs(np.sum(steering_costs,axis=1)) #[num_traj, 1]
-    steering_costs = 0
-    best_action = random_actions[0,np.argmin(costs+steering_costs),:]
+def MPC_select_action(cav_predictor, hdv_predictor, current_state, 
+                      hdmap, planning_horizon,num_trajectories,CEM_iters):
+    
+    K = num_trajectories // 3
+    p_throttle = [np.array([1/3, 1/3, 1/3])] * planning_horizon
+    p_steering = [np.array([1/3, 1/3, 1/3])] * planning_horizon
+    random_throttles = np.array([np.random.choice(np.arange(3), \
+            size=num_trajectories, p=p) for p in p_throttle]) # planning_horizon * num_trajectories
+    
+    random_steerings = np.array([np.random.choice(np.arange(3), \
+            size=num_trajectories, p=p) for p in p_steering]) # planning_horizon * num_trajectories
+    
+    random_action_trajectories = np.dstack([random_throttles, random_steerings]) # size=[planning_horizon,num_trajectories,2] 2:throttle, steering
+    
+    for i in range(CEM_iters):
+
+        costs = compute_trajectory_costs(random_action_trajectories, 
+                                        current_state, cav_predictor, hdv_predictor,
+                                        hdmap)
+        
+        sorted_inds = np.argsort(costs)
+        random_action_trajectories = random_action_trajectories[:, sorted_inds, :]
+
+        # refit 
+        elite_throttles = random_action_trajectories[:, :K, 0] # planning_horizon * (num_trajectories-K)
+        elite_steerings = random_action_trajectories[:, :K, 1] # planning_horizon * (num_trajectories-K)
+
+        p_throttle = []
+        p_steering = []
+        for h in range(planning_horizon):
+            throt_count = dict(zip([0,1,2], [1,1,1]))
+            steer_count = dict(zip([0,1,2], [1,1,1]))
+
+            v_throt, p_throt = np.unique(elite_throttles[h,:],  return_counts=True)
+            v_steer, p_steer = np.unique(elite_steerings[h,:],  return_counts=True)
+            throt_count.update(dict(zip(v_throt, p_throt)))
+            steer_count.update(dict(zip(v_steer, p_steer)))
+
+            p_throt = [throt_count[0], throt_count[1], throt_count[2]]
+            p_steer = [steer_count[0], steer_count[1], steer_count[2]]
+
+            p_throttle.append(p_throt/np.sum(p_throt))
+            p_steering.append(p_steer/np.sum(p_steer))
+        
+
+        # Generate new samples and replace the bottom num_trajectories - K
+        random_throttles = np.array([np.random.choice(np.arange(3), \
+            size=num_trajectories-K, p=p) for p in p_throttle]) # planning_horizon * (num_trajectories-K)
+    
+        random_steerings = np.array([np.random.choice(np.arange(3), \
+                size=num_trajectories-K, p=p) for p in p_steering])  # planning_horizon * (num_trajectories-K)
+
+        random_action_trajectories[:, K:, 0] = random_throttles # planning_horizon * (num_trajectories-K)
+        random_action_trajectories[:, K:, 1] = random_steerings # planning_horizon * (num_trajectories-K)
+
+
+    best_action = random_action_trajectories[0, 0, :]
     return best_action
 
 
-def optimization_based_action_selection(cav_predictor,hdv_predictor,current_state,planning_horizon):
-
-    pass
 
 
 def updata_dataset(dataset):
@@ -222,14 +270,14 @@ def updata_dataset(dataset):
         
 
 def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
-                hdv_predictor,planning_horizon,num_trajectories):
+                hdv_predictor,planning_horizon,num_trajectories,CEM_iters):
     
     dataset = Dataset()
 
     clock = pygame.time.Clock()
     quit_flag = False
     success_runs = 0
-
+    time_list = []
     for episode_num in range(num_runs):
         current_state = env.reset().copy()
         episode_reward = 0
@@ -242,10 +290,15 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     quit_flag = True
-
+            start_time = time.time()
             rl_actions = MPC_select_action(cav_predictor,\
-                    hdv_predictor,current_state,env.world.map,planning_horizon,num_trajectories)            
+                    hdv_predictor,current_state,env.world.map,planning_horizon,num_trajectories,CEM_iters)            
+            end_time = time.time()
             
+            time_elapsed = end_time - start_time
+            # print(start_time,end_time, time_elapsed)
+            time_list.append(time_elapsed)
+
             next_state, reward, done, info = env.step(rl_actions) #state: {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
     
             episode_reward += reward
@@ -255,8 +308,11 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
 
             if done:
                 # print(next_state['CAV'])
-                # print(info)
-                if info["collide_with"] == "Audi Tt":
+                print("collision with: ", info["collide_with"])
+                if info["collide_with"] == "Audi Tt" or \
+                    info["collide_with"] == "Mustang Mustang" or \
+                        info["collide_with"] == "Tesla Model3" or \
+                            info["collide_with"] == "Bmw":
                     success_runs -= 1
                 break
 
@@ -266,11 +322,11 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
         success_runs += 1
         print("Episode ",episode_num," done in : ", timestep, " -- episode reward: ", episode_reward)
 
-    return dataset,success_runs
+    return dataset, success_runs, np.mean(time_list)
 
 
 def path_planning_main(num_runs,max_steps_per_episode, model_type, \
-    return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories, \
+    return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories,CEM_iters, \
     city_name="Town03", render=True, saving_data=True,init_params=None, use_real_human=False):
 
     ### load the model
@@ -310,13 +366,14 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
                         init_params = init_params,
                         use_real_human=use_real_human)
         
-        dataset,success_runs = avoid_crash( env=env,
+        dataset,success_runs,avg_time = avoid_crash( env=env,
                                             num_runs=num_runs,
                                             max_steps_per_episode=max_steps_per_episode,
                                             cav_predictor=cav_predictor,
                                             hdv_predictor=hdv_predictor,
                                             planning_horizon=planning_horizon,
-                                            num_trajectories = num_trajectories)
+                                            num_trajectories = num_trajectories,
+                                            CEM_iters = CEM_iters)
         
         if saving_data:
             updata_dataset(dataset)
@@ -336,7 +393,7 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
 
         pygame.quit()
 
-    return success_runs/num_runs
+    return success_runs/num_runs, avg_time
 
 
 if __name__ == "__main__":
@@ -344,18 +401,20 @@ if __name__ == "__main__":
     # RENDER = True
     RENDER = False
     MAX_STEPS_PER_EPISODE = 100
-    WARMING_UP_STEPS = 50
+    WARMING_UP_STEPS = 60
     WINDOW_SIZE = 5
+    CEM_ITERSs = [1, 5, 10]
+    PLANNING_HORIZONs = [1,2,3,5,10]
+    NUM_TRAJECORIESs = [1,5,10,20,30]
 
-    # PLANNING_HORIZONs = [3]
-    # NUM_TRAJECORIESs = [30]
+    # CEM_ITERSs = [5]
+    # PLANNING_HORIZONs = [5]
+    # NUM_TRAJECORIESs = [10]
 
-    PLANNING_HORIZONs = [1,3,5,7,10]
-    NUM_TRAJECORIESs = [5,10,20,30]
     SAVING_DATA = False
-    USE_REAL_HUMAN = True
+    USE_REAL_HUMAN = False
     CITY_NAME = "Town03"
-    speed = 25
+    speed = 20
     init_params = dict(cav_loc = 1,
                        speed = speed,
                        bhdv_init_speed = speed,
@@ -367,26 +426,27 @@ if __name__ == "__main__":
     # info = {}
     for PLANNING_HORIZON in PLANNING_HORIZONs:
         for NUM_TRAJECORIES in NUM_TRAJECORIESs:    
-            sr = path_planning_main(num_runs=20,
-                                    max_steps_per_episode=MAX_STEPS_PER_EPISODE, 
-                                    model_type='linreg', 
-                                    return_sequence=False, 
-                                    warming_up_steps=WARMING_UP_STEPS, 
-                                    window_size=WINDOW_SIZE, 
-                                    planning_horizon=PLANNING_HORIZON, 
-                                    num_trajectories = NUM_TRAJECORIES,
-                                    city_name=CITY_NAME,
-                                    render=RENDER,
-                                    saving_data=SAVING_DATA,
-                                    init_params=init_params,
-                                    use_real_human=USE_REAL_HUMAN)
-    
-            print("PLANNING_HORIZON: ", PLANNING_HORIZON)
-            print("NUM_TRAJECORIES: ", NUM_TRAJECORIES)
-            print("Success rate: ", sr)
-
-            # info[]info.get()
-
-            with open("result25_human.txt",'a+') as f:
-                s =  str(PLANNING_HORIZON) + " " + str(NUM_TRAJECORIES) + " " + str(sr)
-                f.write(s + '\n')
+            for CEM_ITERS in CEM_ITERSs:
+                sr,avg_t = path_planning_main(num_runs=20,
+                                                max_steps_per_episode=MAX_STEPS_PER_EPISODE, 
+                                                model_type='linreg', 
+                                                return_sequence=False, 
+                                                warming_up_steps=WARMING_UP_STEPS, 
+                                                window_size=WINDOW_SIZE, 
+                                                planning_horizon=PLANNING_HORIZON, 
+                                                num_trajectories = NUM_TRAJECORIES,
+                                                CEM_iters = CEM_ITERS,
+                                                city_name=CITY_NAME,
+                                                render=RENDER,
+                                                saving_data=SAVING_DATA,
+                                                init_params=init_params,
+                                                use_real_human=USE_REAL_HUMAN)
+        
+                print("PLANNING_HORIZON: ", PLANNING_HORIZON)
+                print("NUM_TRAJECORIES: ", NUM_TRAJECORIES)
+                print("CEM_ITERS: ", CEM_ITERS)
+                print("Success rate: ", sr)
+                print("Average time: ", avg_t)
+                with open(f"./runs/speed_{speed}_success_rate2.txt",'a+') as f:
+                    s =  f"{PLANNING_HORIZON},{NUM_TRAJECORIES},{CEM_ITERS},{sr},{avg_t}"
+                    f.write(s + '\n')
