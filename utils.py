@@ -12,7 +12,6 @@ import weakref
 import collections
 import datetime
 import math
-import random
 import numpy as np
 
 # try:
@@ -27,7 +26,6 @@ import carla
 from carla import ColorConverter as cc
 import pygame
 
-from controller import *
 
 def find_weather_presets():
     rgx = re.compile('.+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)')
@@ -38,168 +36,6 @@ def find_weather_presets():
 def get_actor_display_name(actor, truncate=250):
     name = ' '.join(actor.type_id.replace('_', '.').title().split('.')[1:])
     return (name[:truncate - 1] + u'\u2026') if len(name) > truncate else name
-
-
-class World(object):
-    def __init__(self, carla_world, hud, init_params, use_real_human=False):
-        self.world = carla_world
-        self.hud = hud
-        self.map = self.world.get_map()
-
-        self.CAV = None
-        self.LHDV = None
-        self.FHDV = None
-        self.BHDV = None
-        self.use_real_human = use_real_human
-
-        self.vehicles = None
-
-        self.collision_sensor = None
-        self.lane_invasion_sensor = None
-        self.gnss_sensor = None
-        self.camera_manager = None
-        self.radar_sensor = None
-        self._weather_presets = find_weather_presets()
-        self._weather_index = 0
-
-        self.restart(init_params)  
-        self.world.on_tick(hud.on_world_tick)
-
-    def restart(self, init_params):
-        # Set up vehicles
-        self.LHDV_FLAGS = random.choice([0,1]) # 0 crash from left, 1 crash from right
-
-        if self.use_real_human:
-            if self.LHDV_FLAGS == 0: # left
-                file_number = random.randint(0, 28)
-                path_template = './human_data/left/{}.p'
-            else:
-                file_number = random.randint(0, 26)
-                path_template = './human_data/right/{}.p'
-            control_command_file = path_template.format(file_number)
-        else:
-            files = ['./control_details/LHDV.p','./control_details/LHDV_right.p'] 
-            control_command_file = files[self.LHDV_FLAGS]
-
-        self.setup_vehicles(**init_params)
-
-        # Set up the sensors.
-        self.setup_sensors()
-        
-        self.setup_controllers(control_command_file)
-
-    def setup_vehicles(self, 
-                       cav_loc,
-                       speed,
-                       bhdv_init_speed,
-                       headway,
-                       loc_diff, 
-                       headway_2):
-        
-        lane_width = 3.5
-
-        LHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
-        LHDV_spawn_point.location.y += (self.LHDV_FLAGS*2 - 1)*lane_width 
-        # print("base:",self.world.get_map().get_spawn_points()[cav_loc])
-
-        # print("LHDV",LHDV_spawn_point.location, "flag", self.LHDV_FLAGS)
-        CAV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]#random.choice(spawn_points) if spawn_points else carla.Transform()
-        CAV_spawn_point.location.x -= loc_diff
-        # print("CAV",CAV_spawn_point.location)
-
-        FHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
-        FHDV_spawn_point.location.x += headway_2
-        FHDV_spawn_point.location.y += (self.LHDV_FLAGS*2 - 1)*lane_width 
-        # print("FHDV",FHDV_spawn_point.location)
-
-        BHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
-        BHDV_spawn_point.location.x -= headway
-
-
-        def get_blueprint(role_name,filters,color):
-            blueprint = self.world.get_blueprint_library().filter(filters)[0]
-            blueprint.set_attribute('role_name', role_name)
-            if blueprint.has_attribute('color'):
-                blueprint.set_attribute('color', color)
-            return blueprint
-
-        self.CAV = self.world.try_spawn_actor(get_blueprint("CAV","model3","204,0,0"), CAV_spawn_point)
-        self.LHDV = self.world.try_spawn_actor(get_blueprint("LHDV","tt","255,255,0"), LHDV_spawn_point)
-        self.FHDV = self.world.try_spawn_actor(get_blueprint("FHDV",'bmw','128,128,128'), FHDV_spawn_point)
-        self.BHDV = self.world.try_spawn_actor(get_blueprint("BHDV",'mustang','51,51,255'), BHDV_spawn_point)
-
-        self.vehicles = [self.CAV, self.LHDV, self.FHDV, self.BHDV]
-
-        for i in self.vehicles:
-            i.set_target_velocity(carla.Vector3D(x=speed))
-        self.BHDV.set_target_velocity(carla.Vector3D(x=bhdv_init_speed))
-
-    def setup_sensors(self):
-        # Keep same camera config if the camera manager exists.
-        # print(self.CAV)
-
-        cam_index = self.camera_manager.index if self.camera_manager is not None else 0
-        cam_pos_index = self.camera_manager.transform_index if self.camera_manager is not None else 0
-
-        self.collision_sensor = CollisionSensor(self.CAV, self.hud)
-        self.lane_invasion_sensor = LaneInvasionSensor(self.CAV, self.hud)
-        self.gnss_sensor = GnssSensor(self.CAV)
-        self.imu_sensor = IMUSensor(self.CAV)
-        self.camera_manager = CameraManager(self.CAV, self.hud, 2.2)
-        self.camera_manager.transform_index = cam_pos_index
-        self.camera_manager.set_sensor(cam_index, notify=False)
-        actor_type = get_actor_display_name(self.CAV)
-        self.hud.notification(actor_type)
-
-
-    def setup_controllers(self, control_command_file):
-        # self.cav_controller = controller(self.CAV, True)
-        self.cav_controller = CAV_controller(self.CAV)
-        self.ldhv_controller = LHDV_controller(self.LHDV,False,control_command_file)
-        # self.bhdv_controller = controller(self.BHDV, True)
-        
-
-    def next_weather(self, reverse=False):
-        self._weather_index += -1 if reverse else 1
-        self._weather_index %= len(self._weather_presets)
-        preset = self._weather_presets[self._weather_index]
-        self.hud.notification('Weather: %s' % preset[1])
-        self.CAV.get_world().set_weather(preset[0])
-
-
-    def tick(self, clock):
-        self.hud.tick(self, clock)
-
-    def render(self, display):
-        self.camera_manager.render(display)
-        self.hud.render(display)
-
-    def destroy_sensors(self):
-        self.camera_manager.sensor.destroy()
-        self.camera_manager.sensor = None
-        self.camera_manager.index = None
-
-    def destroy(self):
-        if not self.vehicles:
-            return 
-        if self.radar_sensor is not None:
-            self.toggle_radar()
-        actors = [
-            self.camera_manager.sensor,
-            self.collision_sensor.sensor,
-            self.lane_invasion_sensor.sensor,
-            self.gnss_sensor.sensor,
-            self.imu_sensor.sensor] + self.vehicles
-
-
-        # print(actors)
-        for actor in actors:
-            if actor is not None:
-                actor.destroy()
-
-        self.vehicles = None
-
-        print("destoyed")
 
         
 class HUD(object):
@@ -231,9 +67,9 @@ class HUD(object):
         self._notifications.tick(world, clock)
         if not self._show_info:
             return
-        t = world.CAV.get_transform()
-        v = world.CAV.get_velocity()
-        c = world.CAV.get_control()
+        t = world.ego_veh.get_transform()
+        v = world.ego_veh.get_velocity()
+        c = world.ego_veh.get_control()
         compass = world.imu_sensor.compass
         heading = 'N' if compass > 270.5 or compass < 89.5 else ''
         heading += 'S' if 90.5 < compass < 269.5 else ''
@@ -248,7 +84,7 @@ class HUD(object):
             'Server:  % 16.0f FPS' % self.server_fps,
             'Client:  % 16.0f FPS' % clock.get_fps(),
             '',
-            'Vehicle: % 20s' % get_actor_display_name(world.CAV, truncate=20),
+            'Vehicle: % 20s' % get_actor_display_name(world.ego_veh, truncate=20),
             'Map:     % 20s' % world.map.name,
             'Simulation time: % 12s' % datetime.timedelta(seconds=int(self.simulation_time)),
             '',
@@ -282,7 +118,7 @@ class HUD(object):
         if len(vehicles) > 1:
             self._info_text += ['Nearby vehicles:']
             distance = lambda l: math.sqrt((l.x - t.location.x)**2 + (l.y - t.location.y)**2 + (l.z - t.location.z)**2)
-            vehicles = [(distance(x.get_location()), x) for x in vehicles if x.id != world.CAV.id]
+            vehicles = [(distance(x.get_location()), x) for x in vehicles if x.id != world.ego_veh.id]
             for d, vehicle in sorted(vehicles):
                 if d > 200.0:
                     break

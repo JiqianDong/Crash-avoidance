@@ -36,51 +36,34 @@ from gym.spaces.box import Box
 from gym.spaces import Discrete, Tuple
 from sklearn.metrics.pairwise import euclidean_distances
 from collections import defaultdict
-from utils import World, HUD
+from utils import HUD
 import copy
+
+from world import World
 
 class CarlaEnv(object):
     '''
         An OpenAI Gym Environment for CARLA.
     '''
-    def __init__(self,
-                 host='127.0.0.1',
-                 port=2000,
-                 city_name='Town03',
-                 render_pygame=True,
-                 warming_up_steps=50,
-                 window_size = 5,
-                 init_params = None,
-                 use_real_human = False
-                 ):
-        self.init_params = init_params
-        if not init_params:
-            if city_name == "Town03": cav_loc = 1
-            elif city_name == "Town04":cav_loc = 0
-            else:
-                cav_loc = 0
-                print("unknow spawn point") 
-            print("using default initial parameters")
-            self.init_params = dict(cav_loc = 1,
-                                    speed = 20,
-                                    bhdv_init_speed = 10,
-                                    headway = 10,
-                                    loc_diff = 4.5, # almost crash 
-                                    headway_2 = 7)
-
-        self.client = carla.Client(host,port)
-        self.client.set_timeout(2.0)
-
-        self.hud = HUD(1700,1000)
-        self._carla_world = self.client.load_world(city_name)
+    def __init__(self, init_params, ):
         
-        settings = self._carla_world.get_settings()
-        settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 0.05
+        self.init_params = init_params
+        # if not init_params:
+        #     if city_name == "Town03": cav_loc = 1
+        #     elif city_name == "Town04":cav_loc = 0
+        #     else:
+        #         cav_loc = 0
+        #         print("unknow spawn point") 
+        #     print("using default initial parameters")
+        #     self.init_params = dict(city_name = city_name,
+        #                             cav_loc = 1,
+        #                             speed = 20,
+        #                             bhdv_init_speed = 10,
+        #                             headway = 10,
+        #                             loc_diff = 4.5, # almost crash 
+        #                             headway_2 = 7)
 
-        self._carla_world.apply_settings(settings)
-
-        self.world = World(self._carla_world, self.hud, self.init_params, use_real_human)
+        self.world = World(self.init_params, lhdv_controller)
         self.render_pygame = render_pygame
 
         self.timestep = 0
@@ -129,7 +112,7 @@ class CarlaEnv(object):
                 print('frame skip!')
         self.frame_num = frame
 
-    def step(self,rl_actions):
+    def step(self, rl_actions):
         
         self.world.cav_controller.step(rl_actions)
         self.world.ldhv_controller.step()

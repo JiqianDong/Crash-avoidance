@@ -11,7 +11,6 @@ class controller(object):
         self.current_control = {'throttle':0,"steer":0,"brake":0}
 
         self.steering_increment = 0.1
-
         self.reset()
 
         if self.carla_pilot:
@@ -43,7 +42,6 @@ class controller(object):
         self._control.steer = self.current_control['steer']
         self._control.brake = self.current_control['brake']
 
-        
         self.vehilcle.apply_control(self._control)
 
         
@@ -91,7 +89,10 @@ class LHDV_controller(controller):
         else:
             return 
         
-
+class Teleop_controller(controller):
+    def __init__(self, actor, carla_pilot=False, trajectory_file='./generated_trajs/1.npy'):
+        super().__init__(actor, carla_pilot)
+        np.load(trajectory_file)
 
 
 

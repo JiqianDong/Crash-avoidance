@@ -16,7 +16,7 @@ from sklearn.metrics import pairwise_distances
 import pickle
 from dataset import Dataset
 import time
-
+import yaml
 
 
 def process_action(action, current_control):
@@ -325,18 +325,31 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
     return dataset, success_runs, np.mean(time_list)
 
 
-def path_planning_main(num_runs,max_steps_per_episode, model_type, \
-    return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories,CEM_iters, \
-    city_name="Town03", render=True, saving_data=True,init_params=None, use_real_human=False):
+def path_planning_main(params):
 
+    init_params = params["init_params"]
+    env_params =  params["env_params"]
+    crash_avoid_params =  params["crash_avoid_params"]
+    sim_params =  params["sim_params"]
+
+    # num_runs,max_steps_per_episode, model_type, \
+    # return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories,CEM_iters, \
+    # city_name="Town03", render=True, saving_data=True,init_params=None, use_real_human=False
     ### load the model
-    from traj_pred_models import build_model
-    seq_flag = 'seq' if return_sequence else 'nonseq'
-    cav_model_file = './models/{}/{}_{}_{}.pt'.format(city_name, 'cav', model_type, seq_flag)
-    hdv_model_file = './models/{}/{}_{}_{}.pt'.format(city_name, 'hdv', model_type, seq_flag)
 
-    cav_predictor, hdv_predictor, _, _ = build_model(model_type, return_sequence)
-    # print(cav_model_file,hdv_model_file)
+    from traj_pred_models import build_model
+    seq_flag = 'seq' if crash_avoid_params["return_seq"] else 'nonseq'
+
+    cav_predictor, hdv_predictor, _, _ = build_model(crash_avoid_params["model_type"], 
+                                                     crash_avoid_params["return_seq"])
+    cav_model_file = './models/{}/{}_{}_{}.pt'.format(env_params["city_name"], 
+                                                      'cav', 
+                                                      crash_avoid_params["model_type"], 
+                                                      seq_flag)
+    hdv_model_file = './models/{}/{}_{}_{}.pt'.format(env_params["city_name"], 
+                                                      'hdv', 
+                                                      crash_avoid_params["model_type"], 
+                                                      seq_flag)
     try:
         cav_predictor.load_state_dict(torch.load(cav_model_file))
         hdv_predictor.load_state_dict(torch.load(hdv_model_file))
@@ -346,7 +359,7 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
         cav_predictor.eval()
         hdv_predictor.eval()
 
-        print("successfully loaded the %s model"%model_type)
+        print("successfully loaded the %s model"%crash_avoid_params["model_type"])
     except Exception as e:
         print(e)
         print("no trained model found")
@@ -359,26 +372,28 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
         pygame.font.init()
 
         # create environment
-        env = CarlaEnv( city_name=city_name,
-                        render_pygame=render,
-                        warming_up_steps=warming_up_steps, 
-                        window_size=window_size,
-                        init_params = init_params,
-                        use_real_human=use_real_human)
+        # env = CarlaEnv( city_name=city_name,
+        #                 render_pygame=render,
+        #                 warming_up_steps=warming_up_steps, 
+        #                 window_size=window_size,
+        #                 init_params = init_params,
+        #                 use_real_human=use_real_human)
+        env = CarlaEnv(env_params, init_params)
         
-        dataset,success_runs,avg_time = avoid_crash( env=env,
-                                            num_runs=num_runs,
-                                            max_steps_per_episode=max_steps_per_episode,
-                                            cav_predictor=cav_predictor,
-                                            hdv_predictor=hdv_predictor,
-                                            planning_horizon=planning_horizon,
-                                            num_trajectories = num_trajectories,
-                                            CEM_iters = CEM_iters)
+        dataset,success_runs,avg_time = avoid_crash( 
+                                        env=env,
+                                        num_runs=sim_params["num_runs"],
+                                        max_steps_per_episode=sim_params["max_steps_per_episode"],
+                                        cav_predictor=cav_predictor,
+                                        hdv_predictor=hdv_predictor,
+                                        planning_horizon=crash_avoid_params["planning_horizon"],
+                                        num_trajectories=crash_avoid_params["num_trajectories"],
+                                        CEM_iters=crash_avoid_params["CEM_iters"])
         
-        if saving_data:
+        if sim_params["saving_data"]:
             updata_dataset(dataset)
         
-        print("success_rate: ", success_runs/num_runs)
+        print("success_rate: ", success_runs/sim_params["num_runs"])
 
     except Exception as e:
         print (e)
@@ -393,60 +408,19 @@ def path_planning_main(num_runs,max_steps_per_episode, model_type, \
 
         pygame.quit()
 
-    return success_runs/num_runs, avg_time
+    return success_runs/sim_params["num_runs"], avg_time
 
 
 if __name__ == "__main__":
 # 
-    # RENDER = True
-    RENDER = False
-    MAX_STEPS_PER_EPISODE = 100
-    WARMING_UP_STEPS = 60
-    WINDOW_SIZE = 5
-    CEM_ITERSs = [1, 5, 10]
-    PLANNING_HORIZONs = [1,2,3,5,10]
-    NUM_TRAJECORIESs = [1,5,10,20,30]
+    with open("./cfg.yaml", 'r') as f:
+        params = yaml.safe_load(f)
+    sr,avg_t = path_planning_main()
 
-    # CEM_ITERSs = [5]
-    # PLANNING_HORIZONs = [5]
-    # NUM_TRAJECORIESs = [10]
+    print("Success rate: ", sr)
+    print("Average time: ", avg_t)
 
-    SAVING_DATA = False
-    USE_REAL_HUMAN = False
-    CITY_NAME = "Town03"
-    speed = 20
-    init_params = dict(cav_loc = 1,
-                       speed = speed,
-                       bhdv_init_speed = speed,
-                       headway = 10,
-                       loc_diff = 4.5, # almost crash 
-                       headway_2 = 7)
-    # print(init_params)
 
-    # info = {}
-    for PLANNING_HORIZON in PLANNING_HORIZONs:
-        for NUM_TRAJECORIES in NUM_TRAJECORIESs:    
-            for CEM_ITERS in CEM_ITERSs:
-                sr,avg_t = path_planning_main(num_runs=20,
-                                                max_steps_per_episode=MAX_STEPS_PER_EPISODE, 
-                                                model_type='linreg', 
-                                                return_sequence=False, 
-                                                warming_up_steps=WARMING_UP_STEPS, 
-                                                window_size=WINDOW_SIZE, 
-                                                planning_horizon=PLANNING_HORIZON, 
-                                                num_trajectories = NUM_TRAJECORIES,
-                                                CEM_iters = CEM_ITERS,
-                                                city_name=CITY_NAME,
-                                                render=RENDER,
-                                                saving_data=SAVING_DATA,
-                                                init_params=init_params,
-                                                use_real_human=USE_REAL_HUMAN)
-        
-                print("PLANNING_HORIZON: ", PLANNING_HORIZON)
-                print("NUM_TRAJECORIES: ", NUM_TRAJECORIES)
-                print("CEM_ITERS: ", CEM_ITERS)
-                print("Success rate: ", sr)
-                print("Average time: ", avg_t)
-                with open(f"./runs/speed_{speed}_success_rate2.txt",'a+') as f:
-                    s =  f"{PLANNING_HORIZON},{NUM_TRAJECORIES},{CEM_ITERS},{sr},{avg_t}"
-                    f.write(s + '\n')
+    # with open(f"./runs/speed_{speed}_success_rate2.txt",'a+') as f:
+    #     s =  f"{PLANNING_HORIZON},{NUM_TRAJECORIES},{CEM_ITERS},{sr},{avg_t}"
+    #     f.write(s + '\n')

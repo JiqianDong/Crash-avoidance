@@ -1,0 +1,24 @@
+init_params:
+  cav_loc: 1
+  speed: 20
+  bhdv_init_speed: 10
+  headway: 10
+  loc_diff: 4.5 # almost crash 
+  headway_2: 7 # 
+env_params:
+  city_name: "Town03"
+  lhdv_controlle_type: "human"
+  ip: "127.0.0.1"
+  port: 2000
+  render: True
+crash_avoid_params:
+  model_type: "linreg" # "mlp", "rnn"
+  planning_horizon: 5
+  num_trajectories: 5
+  CEM_iters: 10
+  return_seq: False # Whether the state estimation model is returning a sequence 
+sim_params:
+  mode: "eval"
+  max_steps_per_episode: 100
+  num_runs: 20
+  saving_data: False
