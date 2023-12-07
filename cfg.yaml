@@ -5,12 +5,14 @@ init_params:
   headway: 10
   loc_diff: 4.5 # almost crash 
   headway_2: 7 # 
+  warming_up_steps: 50
 env_params:
   city_name: "Town03"
   lhdv_controlle_type: "human"
   ip: "127.0.0.1"
   port: 2000
-  render: True
+  state_params:
+    window_size: 5
 crash_avoid_params:
   model_type: "linreg" # "mlp", "rnn"
   planning_horizon: 5
@@ -22,3 +24,5 @@ sim_params:
   max_steps_per_episode: 100
   num_runs: 20
   saving_data: False
+  render_pygame: True
+  fixed_delta_seconds: 0.05 # The simulation step

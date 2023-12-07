@@ -30,7 +30,6 @@ def main():
     RETRAINING = False
 
 
-    
     if GATHER_DATA:
         data_path = './experience_data/{}_data_pickle.pickle'.format(CITY_NAME)
         gather_data_main(city_name=CITY_NAME,

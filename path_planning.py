@@ -415,7 +415,7 @@ if __name__ == "__main__":
 # 
     with open("./cfg.yaml", 'r') as f:
         params = yaml.safe_load(f)
-    sr,avg_t = path_planning_main()
+    sr,avg_t = path_planning_main(params)
 
     print("Success rate: ", sr)
     print("Average time: ", avg_t)

@@ -18,57 +18,36 @@ import os
 import numpy as np
 import sys
 import glob
+import pygame
 
-# try:
-#     sys.path.append(glob.glob('../../carla/dist/carla-*%d.%d-%s.egg' % (
-#         sys.version_info.major,
-#         sys.version_info.minor,
-#         'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
-# except IndexError:
-#     pass
+try:
+    sys.path.append(glob.glob('../../carla/dist/carla-*%d.%d-%s.egg' % (
+        sys.version_info.major,
+        sys.version_info.minor,
+        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+except IndexError:
+    pass
 
 import carla
-import pygame
 import numpy as np
+import random
 
-import gym
 from gym.spaces.box import Box
 from gym.spaces import Discrete, Tuple
 from sklearn.metrics.pairwise import euclidean_distances
 from collections import defaultdict
-from utils import HUD
 import copy
+from controller import *
 
-from world import World
+from env import ENV
 
-class CarlaEnv(object):
+class CarlaEnv(ENV):
     '''
         An OpenAI Gym Environment for CARLA.
     '''
-    def __init__(self, init_params, ):
-        
-        self.init_params = init_params
-        # if not init_params:
-        #     if city_name == "Town03": cav_loc = 1
-        #     elif city_name == "Town04":cav_loc = 0
-        #     else:
-        #         cav_loc = 0
-        #         print("unknow spawn point") 
-        #     print("using default initial parameters")
-        #     self.init_params = dict(city_name = city_name,
-        #                             cav_loc = 1,
-        #                             speed = 20,
-        #                             bhdv_init_speed = 10,
-        #                             headway = 10,
-        #                             loc_diff = 4.5, # almost crash 
-        #                             headway_2 = 7)
+    def __init__(self, env_params, init_params, sim_params):
+        super().__init__(env_params, init_params, sim_params)
 
-        self.world = World(self.init_params, lhdv_controller)
-        self.render_pygame = render_pygame
-
-        self.timestep = 0
-        self.warming_up_steps = warming_up_steps
-        self.window_size = window_size
         self.current_state = defaultdict(list)  #  {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
 
 
@@ -83,34 +62,6 @@ class CarlaEnv(object):
         N = len(self.world.vehicles)
         F = 6 # FIXME not hard code
         return Box(low=-np.inf, high=np.inf, shape=(N,F), dtype=np.float32)
-
-    def reset(self):
-        # reset the render display panel
-        if self.render_pygame:
-            self.display = pygame.display.set_mode((1280,760),
-            pygame.HWSURFACE | pygame.DOUBLEBUF)
-
-        self.world.destroy()
-        self.world.restart(self.init_params)
-        self.current_state = defaultdict(list)  #reinitialize the current states
-        
-        self.timestep = 0
-        self.frame_num = None
-
-        self.carla_update()
-        assert self.warming_up_steps>self.window_size, "warming_up_steps should be larger than the window size"
-        [self.step(None) for _ in range(self.warming_up_steps)]
-
-        return copy.deepcopy(self.current_state)
-
-    def carla_update(self):
-        frame = self._carla_world.tick() # update in the simulator
-        # snap_shot = self._carla_world.wait_for_tick() # palse the simulator until future tick used in carla 0.9.5
-        if self.frame_num is not None:
-            # print(self.frame_num)
-            if frame != self.frame_num + 1:
-                print('frame skip!')
-        self.frame_num = frame
 
     def step(self, rl_actions):
         
@@ -133,24 +84,10 @@ class CarlaEnv(object):
         reward_ = self.compute_reward(collision)
 
         self.timestep += 1 
-        if self.render_pygame:
-            self.render_frame()
+        self.render_frame()
 
         return state_, reward_, done_, infos
 
-    def render_frame(self):
-        if self.display:
-            self.world.render(self.display)
-            pygame.display.flip()
-        else:
-            raise Exception("No display to render")
-
-
-    def check_collision(self):
-        if len(self.world.collision_sensor.history)>0:
-            return self.world.collision_sensor.history[-1]
-        else:
-            return None
 
     def get_state(self):
         '''
@@ -176,9 +113,7 @@ class CarlaEnv(object):
         
         current_control = self.world.cav_controller.current_control
         current_control = [current_control['throttle'],current_control['steer'],current_control['brake']]
-
         ####  one timestep behind
-
         # current_control = self.world.CAV.get_control()
         # current_control = [current_control.throttle, current_control.steer, current_control.brake]
 
@@ -198,4 +133,106 @@ class CarlaEnv(object):
         return base_reward - collision_penalty*weight_collision
 
 
+    # TODO:======== add the teleop controller for lhdv
+    def setup_controllers(self):
+        LHDV_controlle_type = self.env_params["lhdv_controlle_type"]
+        if LHDV_controlle_type == "human":
+            if self.LHDV_LC_DIRECTION == 0: # left
+                file_number = random.randint(0, 28)
+                path_template = './human_data/left/{}.p'
+            else:
+                file_number = random.randint(0, 26)
+                path_template = './human_data/right/{}.p'
+            control_command_file = path_template.format(file_number)
 
+        elif LHDV_controlle_type == "default":
+            files = ['./control_details/LHDV.p','./control_details/LHDV_right.p'] 
+            control_command_file = files[self.LHDV_LC_DIRECTION]
+
+        elif LHDV_controlle_type == "teleop":
+            files = ['./generated_trajs/1.npy']
+
+        else:
+            raise NotImplementedError
+        self.ego_veh_controller = CAV_controller(self.ego_veh)
+        LHDV_controller = LHDV_controller(self.LHDV, False, control_command_file)
+        # BHDV_controller = controller(BHDV, True)
+
+
+    def initialize_vehicles(self):
+        
+        cav_loc = self.init_params["cav_loc"]
+        headway_2 = self.init_params["headway_2"]
+        headway = self.init_params["headway"]
+        loc_diff = self.init_params["loc_diff"]
+        speed = self.init_params["speed"]
+        bhdv_init_speed = self.init_params["bhdv_init_speed"]
+
+        self.LHDV_LC_DIRECTION = random.choice([0,1]) # 0 crash from left, 1 crash from right
+        
+        lane_width = 3.5
+        LHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
+        LHDV_spawn_point.location.y += (self.LHDV_LC_DIRECTION*2 - 1)*lane_width 
+        # print("LHDV",LHDV_spawn_point.location, "flag", self.LHDV_LC_DIRECTION)
+        CAV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]#random.choice(spawn_points) if spawn_points else carla.Transform()
+        CAV_spawn_point.location.x -= loc_diff
+        # print("CAV",CAV_spawn_point.location)
+
+        FHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
+        FHDV_spawn_point.location.x += headway_2
+        FHDV_spawn_point.location.y += (self.LHDV_LC_DIRECTION*2 - 1)*lane_width 
+        # print("FHDV",FHDV_spawn_point.location)
+
+        BHDV_spawn_point = self.world.get_map().get_spawn_points()[cav_loc]
+        BHDV_spawn_point.location.x -= headway
+
+        def get_blueprint(role_name,filters,color):
+            blueprint = self.world.get_blueprint_library().filter(filters)[0]
+            blueprint.set_attribute('role_name', role_name)
+            if blueprint.has_attribute('color'):
+                blueprint.set_attribute('color', color)
+            return blueprint
+
+        self.ego_veh = self.world.try_spawn_actor(get_blueprint("CAV","model3","204,0,0"), CAV_spawn_point)
+        self.LHDV = self.world.try_spawn_actor(get_blueprint("LHDV","tt","255,255,0"), LHDV_spawn_point)
+        self.FHDV = self.world.try_spawn_actor(get_blueprint("FHDV",'bmw','128,128,128'), FHDV_spawn_point)
+        self.BHDV = self.world.try_spawn_actor(get_blueprint("BHDV",'mustang','51,51,255'), BHDV_spawn_point)
+
+        self.vehicles = [self.ego_veh, self.LHDV, self.FHDV, self.BHDV]
+
+        for i in self.vehicles:
+            i.set_target_velocity(carla.Vector3D(x=speed))
+        self.BHDV.set_target_velocity(carla.Vector3D(x=bhdv_init_speed))
+
+
+
+if __name__ == '__main__':
+    import yaml
+    import traceback
+
+    env = None
+    with open("./cfg.yaml", 'r') as f:
+        params = yaml.safe_load(f)
+
+    init_params = params["init_params"]
+    env_params =  params["env_params"]
+    # crash_avoid_params =  params["crash_avoid_params"]
+    sim_params =  params["sim_params"]
+
+    try:
+        pygame.init()
+        pygame.font.init()
+        env = CarlaEnv(env_params, init_params, sim_params)
+        env.step()
+    except Exception as e:
+        traceback.print_exc()
+    finally:
+
+        if env and env.world:       
+            env.world.destroy()           
+            settings = env._carla_world.get_settings()
+            settings.synchronous_mode = False
+            env._carla_world.apply_settings(settings)
+            print('\ndisabling synchronous mode.')
+
+        pygame.quit()
