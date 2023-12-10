@@ -23,8 +23,6 @@ class ENV(object):
         self.radar_sensor = None
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
-
-
         self.timestep = 0
 
         self.restart()  
@@ -47,10 +45,14 @@ class ENV(object):
         self.map = self.world.get_map()
 
     def restart(self):
-        # Set up vehicles
+        # reset the render display panel
+        if self.sim_params["render_pygame"]:
+            self.display = pygame.display.set_mode((1280,760),
+            pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.initialize_vehicles()
         self.setup_sensors()
         self.setup_controllers()
+        self.frame_num = None
 
 
     def initialize_vehicles(self):
@@ -88,7 +90,7 @@ class ENV(object):
     def tick(self, clock):
         self.hud.tick(self, clock)
 
-    def render(self, display):
+    def _render(self, display):
         self.camera_manager.render(display)
         self.hud.render(display)
 
@@ -107,17 +109,16 @@ class ENV(object):
             if actor is not None:
                 actor.destroy()
         self.vehicles = None
-        print("destoyed")
 
     def check_collision(self):
-        if len(self.world.collision_sensor.history)>0:
-            return self.world.collision_sensor.history[-1]
+        if len(self.collision_sensor.history)>0:
+            return self.collision_sensor.history[-1]
         else:
             return None
         
     def render_frame(self):
         if self.display:
-            self.world.render(self.display)
+            self._render(self.display)
             pygame.display.flip()
         else:
             raise Exception("No display to render")
@@ -134,13 +135,7 @@ class ENV(object):
                 print('frame skip!')
         self.frame_num = frame
 
-
     def reset(self):
-        # reset the render display panel
-        if self.sim_params["render_pygame"]:
-            self.display = pygame.display.set_mode((1280,760),
-            pygame.HWSURFACE | pygame.DOUBLEBUF)
-
         self.destroy()
         self.restart()
 
@@ -153,6 +148,6 @@ class ENV(object):
         window_size = self.env_params["state_params"]["window_size"]
         assert warming_up_steps>window_size, "warming_up_steps should be larger than the window size"
         self.carla_update()
-        [self.step(None) for _ in range(self.warming_up_steps)]
+        [self.step(None) for _ in range(warming_up_steps)]
 
         return copy.deepcopy(self.current_state)

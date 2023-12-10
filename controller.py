@@ -2,7 +2,7 @@ import carla
 import pickle
 import numpy as np
 
-class controller(object):
+class Controller(object):
     def __init__(self,  actor, carla_pilot=False): # carla pilot is the autopilot defined by carla
 
         self.vehilcle = actor
@@ -21,10 +21,10 @@ class controller(object):
     def reset(self):
         self.timestep = 0
 
-    def step(self, decisions=None):
+    def step(self, actions=None):
         self.timestep += 1
-        if isinstance(decisions,np.ndarray):
-            dec = decisions.copy()
+        if isinstance(actions,np.ndarray):
+            dec = actions.copy()
             dec = self.process(dec)
             self.apply(dec) 
         
@@ -44,12 +44,9 @@ class controller(object):
 
         self.vehilcle.apply_control(self._control)
 
-        
-
-class CAV_controller(controller):
+class CAV_controller(Controller):
     def process(self,dec):
         dec -= 1
-
         if dec[0]==-1:
             throttle = 0
             brake = 1
@@ -62,13 +59,10 @@ class CAV_controller(controller):
         else:
             print(dec)
             raise Exception("no specific throttle brake control command")
-
         steer = self.current_control['steer'] + dec[1]*self.steering_increment
-
         return [throttle, steer, brake]
 
-
-class LHDV_controller(controller):
+class LHDVController(Controller):
     def __init__(self, actor, carla_pilot=False, command_file='./control_details/LHDV.p'):
         super().__init__(actor, carla_pilot)
         with open(command_file,'rb') as f:
@@ -80,16 +74,16 @@ class LHDV_controller(controller):
         brake = dec['brake']
         return [throttle, steer, brake]
 
-    def step(self,decisions=None):
+    def step(self,actions=None):
         self.timestep += 1
         if self.timestep < len(self.command_list) - 1:
-            decisions = self.command_list[self.timestep]
-            dec = self.process(decisions)
+            actions = self.command_list[self.timestep]
+            dec = self.process(actions)
             self.apply(dec)
         else:
             return 
         
-class Teleop_controller(controller):
+class Teleop_controller(Controller):
     def __init__(self, actor, carla_pilot=False, trajectory_file='./generated_trajs/1.npy'):
         super().__init__(actor, carla_pilot)
         np.load(trajectory_file)

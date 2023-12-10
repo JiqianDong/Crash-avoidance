@@ -49,7 +49,7 @@ class CarlaEnv(ENV):
         super().__init__(env_params, init_params, sim_params)
 
         self.current_state = defaultdict(list)  #  {"CAV":[window_size, num_features=9], "LHDV":[window_size, num_features=6]}
-
+        self.window_size = env_params["state_params"]["window_size"]
 
     @staticmethod
     def action_space(self):
@@ -59,14 +59,14 @@ class CarlaEnv(ENV):
 
     @staticmethod
     def state_space(self):
-        N = len(self.world.vehicles)
-        F = 6 # FIXME not hard code
+        N = len(self.vehicles)
+        F = self.env_params["state_params"]["state_shape"]
         return Box(low=-np.inf, high=np.inf, shape=(N,F), dtype=np.float32)
 
-    def step(self, rl_actions):
+    def step(self, rl_actions=None):
         
-        self.world.cav_controller.step(rl_actions)
-        self.world.ldhv_controller.step()
+        self.ego_veh_controller.step(rl_actions)
+        self.LHDV_controller.step()
         self.carla_update()
 
         state_ = copy.deepcopy(self.get_state()) #next observation
@@ -93,7 +93,7 @@ class CarlaEnv(ENV):
         '''
         N * [x,y,vx,vy,ax,ay]
         '''
-        for veh in self.world.vehicles:
+        for veh in self.vehicles:
             state = []
             veh_name = veh.attributes['role_name']
 
@@ -111,10 +111,10 @@ class CarlaEnv(ENV):
             self.current_state[veh_name].append(state)
 
         
-        current_control = self.world.cav_controller.current_control
+        current_control = self.ego_veh_controller.current_control
         current_control = [current_control['throttle'],current_control['steer'],current_control['brake']]
         ####  one timestep behind
-        # current_control = self.world.CAV.get_control()
+        # current_control = self.CAV.get_control()
         # current_control = [current_control.throttle, current_control.steer, current_control.brake]
 
         if self.current_state and len(self.current_state["current_control"]) == self.window_size:
@@ -139,14 +139,14 @@ class CarlaEnv(ENV):
         if LHDV_controlle_type == "human":
             if self.LHDV_LC_DIRECTION == 0: # left
                 file_number = random.randint(0, 28)
-                path_template = './human_data/left/{}.p'
+                path_template = './control_details/human_simulator/left/{}.p'
             else:
                 file_number = random.randint(0, 26)
-                path_template = './human_data/right/{}.p'
+                path_template = './control_details/human_simulator/right/{}.p'
             control_command_file = path_template.format(file_number)
 
         elif LHDV_controlle_type == "default":
-            files = ['./control_details/LHDV.p','./control_details/LHDV_right.p'] 
+            files = ['./control_details/synthetic/LHDV.p','./control_details/synthetic/LHDV_right.p'] 
             control_command_file = files[self.LHDV_LC_DIRECTION]
 
         elif LHDV_controlle_type == "teleop":
@@ -155,7 +155,7 @@ class CarlaEnv(ENV):
         else:
             raise NotImplementedError
         self.ego_veh_controller = CAV_controller(self.ego_veh)
-        LHDV_controller = LHDV_controller(self.LHDV, False, control_command_file)
+        self.LHDV_controller = LHDVController(self.LHDV, False, control_command_file)
         # BHDV_controller = controller(BHDV, True)
 
 
@@ -205,7 +205,6 @@ class CarlaEnv(ENV):
         self.BHDV.set_target_velocity(carla.Vector3D(x=bhdv_init_speed))
 
 
-
 if __name__ == '__main__':
     import yaml
     import traceback
@@ -223,16 +222,24 @@ if __name__ == '__main__':
         pygame.init()
         pygame.font.init()
         env = CarlaEnv(env_params, init_params, sim_params)
-        env.step()
+
+        for _ in range(10):
+            current_state = env.reset().copy()
+            for _ in range(100):
+                next_state, reward, done, info = env.step() 
+                if done:
+                    print("collision with: ", info["collide_with"])
+                    break
+
     except Exception as e:
         traceback.print_exc()
     finally:
 
         if env and env.world:       
-            env.world.destroy()           
-            settings = env._carla_world.get_settings()
+            env.destroy()           
+            settings = env.world.get_settings()
             settings.synchronous_mode = False
-            env._carla_world.apply_settings(settings)
-            print('\ndisabling synchronous mode.')
+            env.world.apply_settings(settings)
+            print('\n disabling synchronous mode.')
 
         pygame.quit()

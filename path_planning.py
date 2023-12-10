@@ -17,6 +17,7 @@ import pickle
 from dataset import Dataset
 import time
 import yaml
+import traceback
 
 
 def process_action(action, current_control):
@@ -114,8 +115,6 @@ def deviation_from_center(cav_output, hdmap):
         dist = loc.distance(center_loc.transform.location)
         distances.append(dist)
     return np.array(distances)
-
-
 
 
 def compute_cost(cav_state, hdv_state, hdmap):
@@ -285,14 +284,19 @@ def avoid_crash(env, num_runs,max_steps_per_episode, cav_predictor,\
         # print(current_state)
         for timestep in range(max_steps_per_episode):
             clock.tick()
-            env.world.tick(clock)
+            # env.world.tick(clock)
             # check quit
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     quit_flag = True
             start_time = time.time()
-            rl_actions = MPC_select_action(cav_predictor,\
-                    hdv_predictor,current_state,env.world.map,planning_horizon,num_trajectories,CEM_iters)            
+            rl_actions = MPC_select_action(cav_predictor,
+                                            hdv_predictor,
+                                            current_state,
+                                            env.map,
+                                            planning_horizon,
+                                            num_trajectories,
+                                            CEM_iters)            
             end_time = time.time()
             
             time_elapsed = end_time - start_time
@@ -332,9 +336,6 @@ def path_planning_main(params):
     crash_avoid_params =  params["crash_avoid_params"]
     sim_params =  params["sim_params"]
 
-    # num_runs,max_steps_per_episode, model_type, \
-    # return_sequence, warming_up_steps, window_size, planning_horizon,num_trajectories,CEM_iters, \
-    # city_name="Town03", render=True, saving_data=True,init_params=None, use_real_human=False
     ### load the model
 
     from traj_pred_models import build_model
@@ -353,9 +354,6 @@ def path_planning_main(params):
     try:
         cav_predictor.load_state_dict(torch.load(cav_model_file))
         hdv_predictor.load_state_dict(torch.load(hdv_model_file))
-
-        # print(cav_predictor.output_layer.weight)
-        # print(hdv_predictor.output_layer.weight)
         cav_predictor.eval()
         hdv_predictor.eval()
 
@@ -371,15 +369,9 @@ def path_planning_main(params):
         pygame.init()
         pygame.font.init()
 
-        # create environment
-        # env = CarlaEnv( city_name=city_name,
-        #                 render_pygame=render,
-        #                 warming_up_steps=warming_up_steps, 
-        #                 window_size=window_size,
-        #                 init_params = init_params,
-        #                 use_real_human=use_real_human)
-        env = CarlaEnv(env_params, init_params)
-        
+
+        env = CarlaEnv(env_params, init_params, sim_params)
+
         dataset,success_runs,avg_time = avoid_crash( 
                                         env=env,
                                         num_runs=sim_params["num_runs"],
@@ -396,15 +388,16 @@ def path_planning_main(params):
         print("success_rate: ", success_runs/sim_params["num_runs"])
 
     except Exception as e:
-        print (e)
+        traceback.print_exc()
 
     finally:
         if env and env.world:       
-            env.world.destroy()           
-            settings = env._carla_world.get_settings()
+            env.destroy()           
+            settings = env.world.get_settings()
             settings.synchronous_mode = False
-            env._carla_world.apply_settings(settings)
-            print('\ndisabling synchronous mode.')
+            env.world.apply_settings(settings)
+            print('\n disabling synchronous mode.')
+
 
         pygame.quit()
 

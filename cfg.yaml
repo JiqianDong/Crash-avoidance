@@ -8,11 +8,12 @@ init_params:
   warming_up_steps: 50
 env_params:
   city_name: "Town03"
-  lhdv_controlle_type: "human"
+  lhdv_controlle_type: "default"
   ip: "127.0.0.1"
   port: 2000
   state_params:
     window_size: 5
+    state_shape: 6 # x,y,vx,vy,ax,ay
 crash_avoid_params:
   model_type: "linreg" # "mlp", "rnn"
   planning_horizon: 5
