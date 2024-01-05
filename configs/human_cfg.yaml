@@ -1,14 +1,17 @@
 init_params:
   cav_loc: 1
-  speed: 20
-  bhdv_init_speed: 10
-  headway: 10
-  loc_diff: 4.5 # almost crash 
-  headway_2: 7 # 
+  speed: 40
+  bhdv_init_speed: 40
+  headway: 20
+  loc_diff: 10 # almost crash 
+  headway_2: 10 # 
   warming_up_steps: 50
 env_params:
   city_name: "Town03"
-  lhdv_controlle_type: "default"
+  # lhdv_controlle_type: "default" 
+  # lhdv_controlle_type: "human_control_command"
+  lhdv_controlle_type: "human_trajs"
+  # lhdv_controlle_type: "generated_trajs"
   ip: "127.0.0.1"
   port: 2000
   state_params:

@@ -52,8 +52,11 @@ class ENV(object):
         self.initialize_vehicles()
         self.setup_sensors()
         self.setup_controllers()
+        self.setup_initial_speed()
         self.frame_num = None
 
+    def setup_initial_speed(self):
+        raise NotImplementedError
 
     def initialize_vehicles(self):
         raise NotImplementedError

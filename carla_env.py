@@ -136,26 +136,33 @@ class CarlaEnv(ENV):
     # TODO:======== add the teleop controller for lhdv
     def setup_controllers(self):
         LHDV_controlle_type = self.env_params["lhdv_controlle_type"]
-        if LHDV_controlle_type == "human":
-            if self.LHDV_LC_DIRECTION == 0: # left
-                file_number = random.randint(0, 28)
-                path_template = './control_details/human_simulator/left/{}.p'
-            else:
-                file_number = random.randint(0, 26)
-                path_template = './control_details/human_simulator/right/{}.p'
-            control_command_file = path_template.format(file_number)
+        if LHDV_controlle_type == "human_control_command":
+            files = ['./control_details/human_simulator/control_command/left_lc.p'
+                     './control_details/human_simulator/control_command/right_lc.p']
+            control_command_file = files[self.LHDV_LC_DIRECTION]            
+            self.LHDV_controller = LHDV_controller(self.LHDV, control_command_file, carla_pilot=False)
 
         elif LHDV_controlle_type == "default":
-            files = ['./control_details/synthetic/LHDV.p','./control_details/synthetic/LHDV_right.p'] 
+            files = ['./control_details/synthetic/LHDV_left.p',
+                     './control_details/synthetic/LHDV_right.p'] 
             control_command_file = files[self.LHDV_LC_DIRECTION]
+            self.LHDV_controller = LHDV_controller(self.LHDV, control_command_file, carla_pilot=False)
 
-        elif LHDV_controlle_type == "teleop":
+        elif LHDV_controlle_type == "generated_trajs":
             files = ['./generated_trajs/1.npy']
+
+
+        elif LHDV_controlle_type == "human_trajs":
+            files = ['./control_details/human_simulator/trajectories/left_lc.p',
+                     './control_details/human_simulator/trajectories/right_lc.p'] 
+            traj_file = files[self.LHDV_LC_DIRECTION]
+
+            self.LHDV_controller = Teleop_controller(self.LHDV, traj_file, carla_pilot=False)
 
         else:
             raise NotImplementedError
-        self.ego_veh_controller = CAV_controller(self.ego_veh)
-        self.LHDV_controller = LHDVController(self.LHDV, False, control_command_file)
+        
+        self.ego_veh_controller = Ego_controller(self.ego_veh)
         # BHDV_controller = controller(BHDV, True)
 
 
@@ -165,8 +172,6 @@ class CarlaEnv(ENV):
         headway_2 = self.init_params["headway_2"]
         headway = self.init_params["headway"]
         loc_diff = self.init_params["loc_diff"]
-        speed = self.init_params["speed"]
-        bhdv_init_speed = self.init_params["bhdv_init_speed"]
 
         self.LHDV_LC_DIRECTION = random.choice([0,1]) # 0 crash from left, 1 crash from right
         
@@ -198,12 +203,18 @@ class CarlaEnv(ENV):
         self.FHDV = self.world.try_spawn_actor(get_blueprint("FHDV",'bmw','128,128,128'), FHDV_spawn_point)
         self.BHDV = self.world.try_spawn_actor(get_blueprint("BHDV",'mustang','51,51,255'), BHDV_spawn_point)
 
-        self.vehicles = [self.ego_veh, self.LHDV, self.FHDV, self.BHDV]
+        self.vehicles = [self.ego_veh, 
+                         self.LHDV,
+                         self.FHDV, 
+                         self.BHDV
+                         ]
 
+    def setup_initial_speed(self):
+        speed = self.init_params["speed"]
+        bhdv_init_speed = self.init_params["bhdv_init_speed"]
         for i in self.vehicles:
             i.set_target_velocity(carla.Vector3D(x=speed))
         self.BHDV.set_target_velocity(carla.Vector3D(x=bhdv_init_speed))
-
 
 if __name__ == '__main__':
     import yaml

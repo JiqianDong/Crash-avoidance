@@ -405,8 +405,8 @@ def path_planning_main(params):
 
 
 if __name__ == "__main__":
-# 
-    with open("./cfg.yaml", 'r') as f:
+    # with open("./configs/default_cfg.yaml", 'r') as f:
+    with open("./configs/human_cfg.yaml", 'r') as f:
         params = yaml.safe_load(f)
     sr,avg_t = path_planning_main(params)
 
